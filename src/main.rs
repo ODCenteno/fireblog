@@ -4,6 +4,10 @@ extern crate diesel;
 pub mod schema;
 pub mod models;
 
+use self::schema::posts;
+use self::schema::posts::dsl::*;
+use self::models::{Post, NewPost};
+
 use dotenv::dotenv;
 use std::env;
 use diesel::prelude::*;
@@ -12,9 +16,18 @@ use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 use diesel::r2d2::{self, ConnectionManager};
 use diesel::r2d2::Pool;
 
+pub type DbPool = r2d2::Pool<ConnectionManager<PgConnection>>;
+
 #[get("/")]
-async fn hello_world() -> impl Responder {
-    HttpResponse::Ok().body("Hola, Platzi")
+async fn index(pool: web::Data<DbPool>) -> impl Responder {
+    let conn = pool.get().expect("Problemas al traer la base de datos");
+    
+    match web::block(move || {posts.load::<Post>(&conn)}).await {
+        Ok(data) => {
+            return HttpResponse::Ok().body(format!("{:?}", data));
+        },
+        Err(err) => HttpResponse::Ok().body("Error getting Data")
+    }
 }
 
 #[actix_web::main]
@@ -38,7 +51,7 @@ async fn main() -> std::io::Result<()> {
     let pool = Pool::builder().build(connection).expect("No se pudo construir la Pool");
 
     HttpServer::new(move || {
-        App::new().service(hello_world).data(pool.clone())
+        App::new().service(index).data(pool.clone())
     }).bind(("0.0.0.0", 9900)).unwrap().run().await
 }
 
